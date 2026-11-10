@@ -45,6 +45,7 @@ function renderCreate() {
         <option value="604800">7 days</option>
       </select>
       <label class="choice"><input id="burn" type="checkbox" checked> Delete after one reveal</label>
+      <p class="note">ChronoLock is provided as is. You use it at your own risk. <a href="https://nuem8.com/disclaimer" target="_blank" rel="noreferrer noopener">Disclaimer</a></p>
       <button type="submit">Create link</button>
       <p class="status" id="status" role="status"></p>
     </form>

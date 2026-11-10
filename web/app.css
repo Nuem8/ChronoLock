@@ -170,6 +170,10 @@ button.quiet {
   border: 1px solid var(--line);
 }
 
+.card a {
+  color: var(--copper);
+}
+
 .limit {
   margin: 6px 0 0;
   color: var(--muted);
