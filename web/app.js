@@ -11,28 +11,14 @@ if (!crypto.subtle) {
   renderCreate()
 }
 
-function productIntro() {
-  return `
-    <h1>NueM8 ChronoLock</h1>
-    <p class="tagline">Precision credential dispatch. Forged in local memory, dissolved by time.</p>
-    <ul class="marks">
-      <li>Single-Use AES-256</li>
-      <li>100% Client-Side Encryption</li>
-      <li>Zero Telemetry</li>
-    </ul>
-  `
-}
-
 function renderSecureContext() {
   root.innerHTML = `
-    ${productIntro()}
     <p class="lede">Open this page over HTTPS, or on localhost. This browser will not encrypt a secret on an insecure page.</p>
   `
 }
 
 function renderCreate() {
   root.innerHTML = `
-    ${productIntro()}
     <form class="card" id="create">
       <label for="secret">Secret</label>
       <textarea id="secret" name="secret" autocomplete="off" spellcheck="false" required></textarea>
@@ -101,7 +87,6 @@ function renderLink(link, expiresAt, burn) {
     ? "The secret is deleted the first time someone reveals it."
     : "The secret can be revealed until " + when + "."
   root.innerHTML = `
-    ${productIntro()}
     <div class="card">
       <p>Send this link. The part after # is the key. ChronoLock never receives it and cannot read the secret.</p>
       <label for="link">Secret link</label>
@@ -119,7 +104,6 @@ function renderLink(link, expiresAt, burn) {
 function renderReveal(id) {
   const key = location.hash.replace(/^#/, "")
   root.innerHTML = `
-    ${productIntro()}
     <div class="card">
       <p class="lede" id="lead">A secret is waiting. Revealing it asks the server for the ciphertext, then decrypts it here.</p>
       <button type="button" id="reveal">Reveal secret</button>

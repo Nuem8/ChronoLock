@@ -19,47 +19,27 @@ body {
   font: 16px/1.5 system-ui, "Segoe UI", sans-serif;
 }
 
-.brand {
+.lockup {
   width: min(640px, calc(100% - 32px));
   margin: 28px auto 0;
-}
-
-.brand a {
   display: flex;
   align-items: center;
-  gap: 14px;
-  color: inherit;
-  text-decoration: none;
+  gap: 18px;
 }
 
-.brand img {
-  width: 72px;
-  height: 72px;
+.lockup img {
+  width: 112px;
+  height: 112px;
   flex: 0 0 auto;
 }
 
-.brand-copy {
-  display: flex;
-  flex-direction: column;
-}
-
-.brand-name {
-  display: flex;
-  align-items: baseline;
-  color: var(--copper);
-  font-weight: 600;
-}
-
-.brand-nue { font-size: 1.35rem; }
-.brand-m8 { font-size: 1.7rem; }
-
-.brand-tagline {
-  font-size: 12px;
+.lockup-copy {
+  min-width: 0;
 }
 
 main {
   width: min(640px, calc(100% - 32px));
-  margin: 28px auto 8px;
+  margin: 20px auto 8px;
 }
 
 .legal {
@@ -84,13 +64,13 @@ main {
 }
 
 h1 {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 1.75rem;
   font-weight: 600;
 }
 
 .tagline {
-  margin: 0 0 14px;
+  margin: 4px 0 12px;
   max-width: 36em;
 }
 
@@ -196,4 +176,19 @@ button:disabled {
 .secret {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+@media (max-width: 520px) {
+  .lockup {
+    gap: 12px;
+  }
+
+  .lockup img {
+    width: 84px;
+    height: 84px;
+  }
+
+  h1 {
+    font-size: 1.4rem;
+  }
 }
