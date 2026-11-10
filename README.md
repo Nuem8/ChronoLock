@@ -30,4 +30,4 @@ The longest lifetime is 7 days unless you set `--max-ttl` in seconds.
 
 ## Limits
 
-One secret can be 64KB. There is no account, no log of the secret, and no log of the link id. This is a dead drop for a password or a key, not a password manager.
+One secret can be 8KB, counted in UTF-8 bytes. The page shows the limit and refuses anything larger. The server refuses a ciphertext larger than that same secret plus the 28-byte AES-GCM header. There is no account, no log of the secret, and no log of the link id. This is a dead drop for a password or a key, not a password manager.

@@ -19,15 +19,97 @@ body {
   font: 16px/1.5 system-ui, "Segoe UI", sans-serif;
 }
 
+.brand {
+  width: min(640px, calc(100% - 32px));
+  margin: 28px auto 0;
+}
+
+.brand a {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.brand img {
+  width: 72px;
+  height: 72px;
+  flex: 0 0 auto;
+}
+
+.brand-copy {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-name {
+  display: flex;
+  align-items: baseline;
+  color: var(--copper);
+  font-weight: 600;
+}
+
+.brand-nue { font-size: 1.35rem; }
+.brand-m8 { font-size: 1.7rem; }
+
+.brand-tagline {
+  font-size: 12px;
+}
+
 main {
   width: min(640px, calc(100% - 32px));
-  margin: 48px auto;
+  margin: 28px auto 8px;
+}
+
+.legal {
+  width: min(640px, calc(100% - 32px));
+  margin: 8px auto 48px;
+}
+
+.legal nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+.legal a {
+  color: var(--muted);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.legal a:hover {
+  color: var(--copper);
 }
 
 h1 {
   margin: 0 0 8px;
   font-size: 1.75rem;
   font-weight: 600;
+}
+
+.tagline {
+  margin: 0 0 14px;
+  max-width: 36em;
+}
+
+.marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.marks li {
+  padding: 4px 10px;
+  color: var(--copper);
+  border: 1px solid var(--copper);
+  border-radius: 999px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
 }
 
 .lede, .note, .status {
@@ -86,6 +168,21 @@ button.quiet {
   color: var(--text);
   background: transparent;
   border: 1px solid var(--line);
+}
+
+.limit {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.limit.over {
+  color: var(--copper);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .status {

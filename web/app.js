@@ -1,4 +1,4 @@
-const MAX_BYTES = 65536
+const MAX_BYTES = 8192
 
 const root = document.querySelector("#app")
 const path = location.pathname.split("/").filter(Boolean)
@@ -11,20 +11,32 @@ if (!crypto.subtle) {
   renderCreate()
 }
 
+function productIntro() {
+  return `
+    <h1>NueM8 ChronoLock</h1>
+    <p class="tagline">Precision credential dispatch. Forged in local memory, dissolved by time.</p>
+    <ul class="marks">
+      <li>Single-Use AES-256</li>
+      <li>100% Client-Side Encryption</li>
+      <li>Zero Telemetry</li>
+    </ul>
+  `
+}
+
 function renderSecureContext() {
   root.innerHTML = `
-    <h1>NueM8 ChronoLock</h1>
+    ${productIntro()}
     <p class="lede">Open this page over HTTPS, or on localhost. This browser will not encrypt a secret on an insecure page.</p>
   `
 }
 
 function renderCreate() {
   root.innerHTML = `
-    <h1>NueM8 ChronoLock</h1>
-    <p class="lede">A secret link that dies. The secret is encrypted in this browser before it is stored. ChronoLock keeps the ciphertext only. It has no accounts and it does not phone home.</p>
+    ${productIntro()}
     <form class="card" id="create">
       <label for="secret">Secret</label>
       <textarea id="secret" name="secret" autocomplete="off" spellcheck="false" required></textarea>
+      <p class="limit" id="limit" aria-live="polite">0 bytes of 8KB.</p>
       <label for="ttl">Lifetime</label>
       <select id="ttl" name="ttl">
         <option value="300">5 minutes</option>
@@ -37,7 +49,10 @@ function renderCreate() {
       <p class="status" id="status" role="status"></p>
     </form>
   `
+  const secret = document.querySelector("#secret")
+  secret.addEventListener("input", refreshLimit)
   document.querySelector("#create").addEventListener("submit", onCreate)
+  refreshLimit()
 }
 
 async function onCreate(event) {
@@ -50,7 +65,7 @@ async function onCreate(event) {
     return
   }
   if (bytes > MAX_BYTES) {
-    status.textContent = "That secret is too long."
+    status.textContent = limitMessage(bytes)
     return
   }
   status.textContent = "Encrypting…"
@@ -69,7 +84,9 @@ async function onCreate(event) {
   })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    status.textContent = payload.error || "The link was not created."
+    status.textContent = payload.error || (response.status === 413
+      ? "That secret is larger than 8KB."
+      : "The link was not created.")
     return
   }
   const link = new URL("/s/" + payload.id, location.origin)
@@ -83,7 +100,7 @@ function renderLink(link, expiresAt, burn) {
     ? "The secret is deleted the first time someone reveals it."
     : "The secret can be revealed until " + when + "."
   root.innerHTML = `
-    <h1>NueM8 ChronoLock</h1>
+    ${productIntro()}
     <div class="card">
       <p>Send this link. The part after # is the key. ChronoLock never receives it and cannot read the secret.</p>
       <label for="link">Secret link</label>
@@ -101,7 +118,7 @@ function renderLink(link, expiresAt, burn) {
 function renderReveal(id) {
   const key = location.hash.replace(/^#/, "")
   root.innerHTML = `
-    <h1>NueM8 ChronoLock</h1>
+    ${productIntro()}
     <div class="card">
       <p class="lede" id="lead">A secret is waiting. Revealing it asks the server for the ciphertext, then decrypts it here.</p>
       <button type="button" id="reveal">Reveal secret</button>
@@ -205,6 +222,28 @@ async function copyValue(value) {
   } catch {
     status.textContent = "Select the text and copy it."
   }
+}
+
+function refreshLimit() {
+  const field = document.querySelector("#secret")
+  const note = document.querySelector("#limit")
+  const button = document.querySelector("#create button")
+  const bytes = new TextEncoder().encode(field.value).length
+  const over = bytes > MAX_BYTES
+  note.textContent = over ? limitMessage(bytes) : formatSize(bytes) + " of 8KB."
+  note.classList.toggle("over", over)
+  field.setAttribute("aria-invalid", over ? "true" : "false")
+  button.disabled = over
+}
+
+function limitMessage(bytes) {
+  return "That secret is " + bytes + " bytes. The limit is 8KB."
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + (bytes === 1 ? " byte" : " bytes")
+  const kb = bytes / 1024
+  return (Number.isInteger(kb) ? String(kb) : kb.toFixed(1)) + "KB"
 }
 
 function escapeText(value) {

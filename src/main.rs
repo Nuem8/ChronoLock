@@ -18,9 +18,12 @@ use store::{now_unix, Record, Store, TakeError};
 const INDEX_HTML: &str = include_str!("../web/index.html");
 const APP_CSS: &str = include_str!("../web/app.css");
 const APP_JS: &str = include_str!("../web/app.js");
+const LOGO: &[u8] = include_bytes!("../web/logo.png");
 
-const MAX_CIPHER_BYTES: usize = 70_000;
-const MIN_CIPHER_BYTES: usize = 28;
+const MAX_PLAIN_BYTES: usize = 8 * 1024;
+const GCM_OVERHEAD: usize = 12 + 16;
+const MAX_CIPHER_BYTES: usize = MAX_PLAIN_BYTES + GCM_OVERHEAD;
+const MIN_CIPHER_BYTES: usize = GCM_OVERHEAD;
 const MIN_TTL: u64 = 60;
 const DEFAULT_MAX_TTL: u64 = 7 * 24 * 60 * 60;
 
@@ -158,10 +161,11 @@ fn router(state: AppState) -> Router {
         .route("/", get(index))
         .route("/app.css", get(css))
         .route("/app.js", get(js))
+        .route("/logo.png", get(logo))
         .route("/s/:id", get(index))
         .route("/api/secrets", post(create))
         .route("/api/secrets/:id/reveal", post(reveal))
-        .layer(DefaultBodyLimit::max(96 * 1024))
+        .layer(DefaultBodyLimit::max(16 * 1024))
         .with_state(state)
 }
 
@@ -252,6 +256,18 @@ async fn js() -> Response {
     )
 }
 
+async fn logo() -> Response {
+    let mut response = Response::new(LOGO.into());
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/png"));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    response
+}
+
 fn page(kind: header::HeaderName, value: &'static str, body: &'static str) -> Response {
     let mut response = Response::new(body.into());
     let headers = response.headers_mut();
@@ -302,8 +318,14 @@ async fn create(
         );
     }
 
-    let Ok(ciphertext) = decode_cipher(&body.ciphertext) else {
-        return error(StatusCode::BAD_REQUEST, "The encrypted secret is not valid.");
+    let ciphertext = match decode_cipher(&body.ciphertext) {
+        Ok(ciphertext) => ciphertext,
+        Err(CipherError::TooLarge) => {
+            return error(StatusCode::BAD_REQUEST, "That secret is larger than 8KB.");
+        }
+        Err(CipherError::Invalid) => {
+            return error(StatusCode::BAD_REQUEST, "The encrypted secret is not valid.");
+        }
     };
 
     let id = new_id();
@@ -358,16 +380,23 @@ async fn reveal(
     }
 }
 
-fn decode_cipher(text: &str) -> Result<Vec<u8>, ()> {
+enum CipherError {
+    Invalid,
+    TooLarge,
+}
+
+fn decode_cipher(text: &str) -> Result<Vec<u8>, CipherError> {
     if text.len() > MAX_CIPHER_BYTES * 2 || !text.bytes().all(is_b64url) {
-        return Err(());
+        return Err(CipherError::Invalid);
     }
     let bytes = URL_SAFE_NO_PAD
         .decode(text)
         .or_else(|_| URL_SAFE.decode(text))
-        .map_err(|_| ())?;
-    if bytes.len() < MIN_CIPHER_BYTES || bytes.len() > MAX_CIPHER_BYTES {
-        Err(())
+        .map_err(|_| CipherError::Invalid)?;
+    if bytes.len() < MIN_CIPHER_BYTES {
+        Err(CipherError::Invalid)
+    } else if bytes.len() > MAX_CIPHER_BYTES {
+        Err(CipherError::TooLarge)
     } else {
         Ok(bytes)
     }
@@ -528,5 +557,42 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn a_secret_over_8kb_is_refused() {
+        let app = router(test_state());
+        let too_big = URL_SAFE_NO_PAD.encode(vec![7u8; MAX_CIPHER_BYTES + 1]);
+        let (status, body) = send(
+            app.clone(),
+            Request::builder()
+                .method("POST")
+                .uri("/api/secrets")
+                .header("content-type", "application/json")
+                .body(Body::from(format!(
+                    "{{\"ciphertext\":\"{}\",\"ttl_seconds\":3600,\"burn\":true}}",
+                    too_big
+                )))
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body.contains("8KB"));
+
+        let at_limit = URL_SAFE_NO_PAD.encode(vec![7u8; MAX_CIPHER_BYTES]);
+        let (status, _) = send(
+            app,
+            Request::builder()
+                .method("POST")
+                .uri("/api/secrets")
+                .header("content-type", "application/json")
+                .body(Body::from(format!(
+                    "{{\"ciphertext\":\"{}\",\"ttl_seconds\":3600,\"burn\":true}}",
+                    at_limit
+                )))
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
     }
 }
