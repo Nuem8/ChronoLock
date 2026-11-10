@@ -338,6 +338,7 @@ async fn create(
     if state.store.put(&id, record).is_err() {
         return error(StatusCode::INTERNAL_SERVER_ERROR, "The secret was not saved.");
     }
+    state.store.record_use(store::Use::Created);
 
     (
         StatusCode::CREATED,
@@ -364,15 +365,18 @@ async fn reveal(
     }
 
     match state.store.take(&id) {
-        Ok(record) => (
-            StatusCode::OK,
-            Json(RevealResponse {
-                ciphertext: URL_SAFE_NO_PAD.encode(record.ciphertext),
-                burn: record.burn,
-                expires_at: record.expires_at,
-            }),
-        )
-            .into_response(),
+        Ok(record) => {
+            state.store.record_use(store::Use::Revealed);
+            (
+                StatusCode::OK,
+                Json(RevealResponse {
+                    ciphertext: URL_SAFE_NO_PAD.encode(record.ciphertext),
+                    burn: record.burn,
+                    expires_at: record.expires_at,
+                }),
+            )
+                .into_response()
+        }
         Err(TakeError::Gone) => error(StatusCode::NOT_FOUND, "This secret is gone."),
         Err(TakeError::Store) => {
             error(StatusCode::INTERNAL_SERVER_ERROR, "The secret could not be read.")

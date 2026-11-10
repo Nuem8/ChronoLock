@@ -20,14 +20,28 @@ enum Backend {
     Sqlite(Mutex<Connection>),
 }
 
+#[derive(Clone, Copy)]
+pub enum Use {
+    Created,
+    Revealed,
+}
+
+#[derive(Clone, Copy, Default)]
+struct DayCount {
+    creates: i64,
+    reveals: i64,
+}
+
 pub struct Store {
     backend: Backend,
+    counts: Mutex<HashMap<String, DayCount>>,
 }
 
 impl Store {
     pub fn memory() -> Self {
         Self {
             backend: Backend::Memory(Mutex::new(HashMap::new())),
+            counts: Mutex::new(HashMap::new()),
         }
     }
 
@@ -44,12 +58,49 @@ impl Store {
                 expires_at INTEGER NOT NULL,
                 burn INTEGER NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS secrets_expires ON secrets (expires_at);",
+            CREATE INDEX IF NOT EXISTS secrets_expires ON secrets (expires_at);
+            CREATE TABLE IF NOT EXISTS counts (
+                day TEXT PRIMARY KEY,
+                creates INTEGER NOT NULL,
+                reveals INTEGER NOT NULL
+            );",
         )
         .map_err(|err| err.to_string())?;
         Ok(Self {
             backend: Backend::Sqlite(Mutex::new(conn)),
+            counts: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// Add one to today's create or reveal total. The row is the day and the two numbers.
+    pub fn record_use(&self, kind: Use) {
+        let day = utc_day(now_unix());
+        let (creates, reveals) = match kind {
+            Use::Created => (1, 0),
+            Use::Revealed => (0, 1),
+        };
+        match &self.backend {
+            Backend::Memory(_) => {
+                let Ok(mut counts) = self.counts.lock() else {
+                    return;
+                };
+                let row = counts.entry(day).or_default();
+                row.creates += creates;
+                row.reveals += reveals;
+            }
+            Backend::Sqlite(conn) => {
+                let Ok(conn) = conn.lock() else {
+                    return;
+                };
+                let _ = conn.execute(
+                    "INSERT INTO counts (day, creates, reveals) VALUES (?1, ?2, ?3)
+                     ON CONFLICT(day) DO UPDATE SET
+                       creates = creates + ?2,
+                       reveals = reveals + ?3",
+                    params![day, creates, reveals],
+                );
+            }
+        }
     }
 
     pub fn put(&self, id: &str, record: Record) -> Result<(), ()> {
@@ -149,6 +200,20 @@ impl Store {
     }
 }
 
+pub fn utc_day(unix: i64) -> String {
+    let z = unix.div_euclid(86_400) + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if month <= 2 { y + 1 } else { y };
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
 pub fn now_unix() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -204,6 +269,32 @@ mod tests {
             .unwrap();
         assert!(store.take("one").is_ok());
         assert!(matches!(store.take("one"), Err(TakeError::Gone)));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn utc_day_starts_at_the_epoch() {
+        assert_eq!(utc_day(0), "1970-01-01");
+        assert_eq!(utc_day(86_400), "1970-01-02");
+        assert_eq!(utc_day(1_700_000_000), "2023-11-14");
+    }
+
+    #[test]
+    fn sqlite_counts_creates_and_reveals_for_the_day() {
+        let path = std::env::temp_dir().join(format!("chronolock-counts-{}.db", now_unix()));
+        let store = Store::sqlite(path.to_str().unwrap()).unwrap();
+        store.record_use(Use::Created);
+        store.record_use(Use::Created);
+        store.record_use(Use::Revealed);
+        let conn = Connection::open(&path).unwrap();
+        let (creates, reveals): (i64, i64) = conn
+            .query_row(
+                "SELECT creates, reveals FROM counts WHERE day = ?1",
+                params![utc_day(now_unix())],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((creates, reveals), (2, 1));
         let _ = std::fs::remove_file(&path);
     }
 }
