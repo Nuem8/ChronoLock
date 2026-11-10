@@ -163,7 +163,7 @@ button, .button {
   cursor: pointer;
 }
 
-button.quiet {
+.button.quiet {
   margin-left: 8px;
   color: var(--text);
   background: transparent;
