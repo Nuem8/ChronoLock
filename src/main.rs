@@ -16,6 +16,17 @@ use std::time::{Duration, Instant};
 use store::{now_unix, Record, Store, TakeError};
 
 const INDEX_HTML: &str = include_str!("../web/index.html");
+const ROBOTS_TXT: &str = "\
+User-agent: *\n\
+Allow: /\n\
+Disallow: /s/\n\
+Disallow: /api/\n\
+Sitemap: https://chronolock.nuem8.com/sitemap.xml\n";
+const SITEMAP_XML: &str = "\
+<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n\
+  <url><loc>https://chronolock.nuem8.com/</loc></url>\n\
+</urlset>\n";
 const APP_CSS: &str = include_str!("../web/app.css");
 const APP_JS: &str = include_str!("../web/app.js");
 const LOGO: &[u8] = include_bytes!("../web/logo.png");
@@ -159,10 +170,12 @@ async fn main() {
 fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(index))
+        .route("/robots.txt", get(robots))
+        .route("/sitemap.xml", get(sitemap))
         .route("/app.css", get(css))
         .route("/app.js", get(js))
         .route("/logo.png", get(logo))
-        .route("/s/:id", get(index))
+        .route("/s/:id", get(secret_page))
         .route("/api/secrets", post(create))
         .route("/api/secrets/:id/reveal", post(reveal))
         .layer(DefaultBodyLimit::max(16 * 1024))
@@ -244,6 +257,27 @@ async fn index() -> Response {
     page(header::CONTENT_TYPE, "text/html; charset=utf-8", INDEX_HTML)
 }
 
+async fn secret_page(Path(_id): Path<String>) -> Response {
+    let html = INDEX_HTML.replace(
+        r#"<meta name="robots" content="index, follow">"#,
+        r#"<meta name="robots" content="noindex">"#,
+    );
+    let mut response = page(header::CONTENT_TYPE, "text/html; charset=utf-8", html);
+    response.headers_mut().insert(
+        header::HeaderName::from_static("x-robots-tag"),
+        HeaderValue::from_static("noindex"),
+    );
+    response
+}
+
+async fn robots() -> Response {
+    page(header::CONTENT_TYPE, "text/plain; charset=utf-8", ROBOTS_TXT)
+}
+
+async fn sitemap() -> Response {
+    page(header::CONTENT_TYPE, "application/xml; charset=utf-8", SITEMAP_XML)
+}
+
 async fn css() -> Response {
     page(header::CONTENT_TYPE, "text/css; charset=utf-8", APP_CSS)
 }
@@ -268,7 +302,7 @@ async fn logo() -> Response {
     response
 }
 
-fn page(kind: header::HeaderName, value: &'static str, body: &'static str) -> Response {
+fn page(kind: header::HeaderName, value: &'static str, body: impl Into<axum::body::Body>) -> Response {
     let mut response = Response::new(body.into());
     let headers = response.headers_mut();
     headers.insert(kind, HeaderValue::from_static(value));
@@ -598,5 +632,66 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
+    }
+
+    #[tokio::test]
+    async fn the_homepage_is_indexable_and_secret_links_are_not() {
+        let app = router(test_state());
+        let (status, home) = send(
+            app.clone(),
+            Request::builder().uri("/").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(home.contains("index, follow"));
+        assert!(home.contains("https://chronolock.nuem8.com/"));
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/s/abcdefghijklmnop")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response
+                .headers()
+                .get(header::HeaderName::from_static("x-robots-tag"))
+                .unwrap(),
+            "noindex"
+        );
+        let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let page = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(page.contains("noindex"));
+        assert!(!page.contains("index, follow"));
+
+        let (status, robots) = send(
+            app.clone(),
+            Request::builder()
+                .uri("/robots.txt")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(robots.contains("Disallow: /s/"));
+        assert!(robots.contains("Disallow: /api/"));
+
+        let (status, sitemap) = send(
+            app,
+            Request::builder()
+                .uri("/sitemap.xml")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(sitemap.contains("https://chronolock.nuem8.com/</loc>"));
+        assert!(!sitemap.contains("/s/"));
     }
 }
