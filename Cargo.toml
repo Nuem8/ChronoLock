@@ -1,7 +1,13 @@
+# ChronoLock
+# Developed by Kevin Roper for NueM8.
+# Free to use and test.
+# https://chronolock.nuem8.com/
+
 [package]
 name = "chronolock"
 version = "0.1.0"
 edition = "2021"
+authors = ["Kevin Roper <admin@nuem8.com>"]
 description = "NueM8 ChronoLock — secret links that die after one reveal or a set time"
 license = "GPL-3.0-only"
 publish = false
