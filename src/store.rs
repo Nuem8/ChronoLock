@@ -1,3 +1,9 @@
+//! ChronoLock storage.
+//! Developed by Kevin Roper for NueM8.
+//! Free to use and test.
+//! https://chronolock.nuem8.com/
+//! Licensed under GPL-3.0-only. See LICENSE.
+
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashMap;
 use std::sync::Mutex;
