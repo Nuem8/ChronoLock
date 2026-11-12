@@ -1,0 +1,57 @@
+<!--
+  ChronoLock
+  Developed by Kevin Roper for NueM8.
+  Version 1.1.0
+  Free to use and test.
+  https://chronolock.nuem8.com/
+  Licensed under GPL-3.0-only. See LICENSE.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Revision log | NueM8 ChronoLock</title>
+  <meta name="description" content="Revision log for NueM8 ChronoLock.">
+  <link rel="canonical" href="https://chronolock.nuem8.com/revisions">
+  <meta name="robots" content="index, follow">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <a class="help-mark" href="/help" aria-label="Help">?</a>
+  <div class="lockup">
+    <a href="/" aria-label="ChronoLock"><img src="/logo.png" alt="" width="112" height="112"></a>
+    <div class="lockup-copy">
+      <h1>NueM8 ChronoLock <span class="version">__VERSION__</span></h1>
+      <p class="tagline">Precision credential dispatch. Forged in local memory, dissolved by time.</p>
+    </div>
+  </div>
+  <main class="revisions">
+    <h2>Revision log</h2>
+    <article>
+      <h3>1.1.0 <time datetime="2026-11-12">November 12, 2026</time></h3>
+      <p>A secret can be locked to a public key the recipient already holds. The private key stays in their browser, apart from the public key, and ChronoLock never receives it. A key saved in this browser locks new secrets by default, and you confirm the private key is saved before this browser stores it. A secret can be opened with that key or an unencrypted private-key file. Help opens from the ? in the upper right.</p>
+    </article>
+    <article>
+      <h3>1.0.2 <time datetime="2026-11-12">November 12, 2026</time></h3>
+      <p>The version number is shown beside the title. This log is linked from the bottom of the page.</p>
+    </article>
+    <article>
+      <h3>1.0.0 <time datetime="2026-11-11">November 11, 2026</time></h3>
+      <p>First release. A secret is encrypted in the browser. The key stays in the link. ChronoLock stores the ciphertext until one reveal or the lifetime ends. There is no account and no telemetry.</p>
+    </article>
+  </main>
+  <footer class="legal">
+    <nav aria-label="NueM8">
+      <a href="/">ChronoLock</a>
+      <a href="/key">Your key</a>
+      <a href="/help">Help</a>
+      <a href="https://nuem8.com/philosophy" target="_blank" rel="noreferrer noopener">Design philosophy</a>
+      <a href="https://nuem8.com/privacy" target="_blank" rel="noreferrer noopener">Privacy Policy</a>
+      <a href="https://nuem8.com/disclaimer" target="_blank" rel="noreferrer noopener">Disclaimer</a>
+      <a href="/revisions">Revision log</a>
+    </nav>
+  </footer>
+</body>
+</html>

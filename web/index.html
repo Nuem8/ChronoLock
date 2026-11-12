@@ -1,6 +1,7 @@
 <!--
   ChronoLock
   Developed by Kevin Roper for NueM8.
+  Version 1.1.0
   Free to use and test.
   https://chronolock.nuem8.com/
   Licensed under GPL-3.0-only. See LICENSE.
@@ -14,7 +15,8 @@
   <title>NueM8 ChronoLock | A secret link that expires</title>
   <meta name="description" content="Send a password or API key in a link that dies after one reveal or a set time. Encrypted in the browser. ChronoLock stores only the ciphertext. No account. No telemetry.">
   <link rel="canonical" href="https://chronolock.nuem8.com/">
-  <meta name="robots" content="index, follow">
+    <meta name="robots" content="index, follow">
+    <meta name="chronolock" content="__LOCK__">
   <meta property="og:type" content="website">
   <meta property="og:title" content="NueM8 ChronoLock">
   <meta property="og:description" content="Precision credential dispatch. A secret link that dies. Encrypted in the browser, with no account and no telemetry.">
@@ -23,10 +25,11 @@
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
+  <a class="help-mark" href="/help" aria-label="Help">?</a>
   <div class="lockup">
     <img src="/logo.png" alt="" width="112" height="112">
     <div class="lockup-copy">
-      <h1>NueM8 ChronoLock</h1>
+      <h1>NueM8 ChronoLock <span class="version">__VERSION__</span></h1>
       <p class="tagline">Precision credential dispatch. Forged in local memory, dissolved by time.</p>
       <ul class="marks">
         <li>Single-Use AES-256</li>
@@ -38,9 +41,12 @@
   <main id="app"></main>
   <footer class="legal">
     <nav aria-label="NueM8">
+      <a href="/key">Your key</a>
+      <a href="/help">Help</a>
       <a href="https://nuem8.com/philosophy" target="_blank" rel="noreferrer noopener">Design philosophy</a>
       <a href="https://nuem8.com/privacy" target="_blank" rel="noreferrer noopener">Privacy Policy</a>
       <a href="https://nuem8.com/disclaimer" target="_blank" rel="noreferrer noopener">Disclaimer</a>
+      <a href="/revisions">Revision log</a>
     </nav>
   </footer>
   <noscript>

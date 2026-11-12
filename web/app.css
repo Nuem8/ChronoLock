@@ -1,6 +1,7 @@
 /*
   ChronoLock
   Developed by Kevin Roper for NueM8.
+  Version 1.1.0
   Free to use and test.
   https://chronolock.nuem8.com/
   Licensed under GPL-3.0-only. See LICENSE.
@@ -19,6 +20,8 @@
 
 * { box-sizing: border-box; }
 
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -35,6 +38,12 @@ body {
   gap: 18px;
 }
 
+.lockup a {
+  display: flex;
+  flex: 0 0 auto;
+  line-height: 0;
+}
+
 .lockup img {
   width: 112px;
   height: 112px;
@@ -43,6 +52,28 @@ body {
 
 .lockup-copy {
   min-width: 0;
+  flex: 1;
+}
+
+.help-mark {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  background: var(--copper);
+  border-radius: 999px;
+  font-weight: 650;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.help-mark:hover {
+  color: var(--ink);
 }
 
 main {
@@ -73,8 +104,96 @@ main {
 
 h1 {
   margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 10px;
   font-size: 1.75rem;
   font-weight: 600;
+}
+
+.version {
+  color: var(--muted);
+  font-size: 0.72em;
+  font-weight: 500;
+}
+
+.revisions h2,
+.help h2 {
+  margin: 28px 0 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.revisions article,
+.help article,
+.help section {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.revisions h3,
+.help h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.revisions time {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.revisions p,
+.help p {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.help strong,
+.help em {
+  color: var(--text);
+  font-style: normal;
+}
+
+.help h3 {
+  margin-top: 16px;
+}
+
+.help .mode-card h3 {
+  margin-top: 0;
+}
+
+.help ul,
+.help ol {
+  margin: 8px 0 0;
+  padding-left: 1.25rem;
+  color: var(--muted);
+}
+
+.help li {
+  margin-top: 6px;
+}
+
+.help code {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color: var(--text);
+  font-size: 0.92em;
+}
+
+.mode-card {
+  margin-top: 16px;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.help .warn {
+  margin-top: 16px;
 }
 
 .tagline {
@@ -117,7 +236,7 @@ label, .choice {
   margin: 16px 0 6px;
 }
 
-textarea, input[type="text"], select {
+textarea, input[type="text"], input[type="password"], select {
   width: 100%;
   padding: 10px 12px;
   color: var(--text);
@@ -138,6 +257,114 @@ textarea {
   align-items: center;
 }
 
+.toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggle-row .choice,
+.toggle-row .button {
+  margin-top: 16px;
+  margin-bottom: 6px;
+}
+
+.toggle-row .button.quiet {
+  margin-left: 0;
+}
+
+.key-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.key-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.key-row button,
+.key-row .button {
+  margin: 0;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.keytext {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  letter-spacing: 0.02em;
+}
+
+textarea.keytext {
+  min-height: 96px;
+  word-break: break-all;
+}
+
+input.keytext {
+  text-overflow: ellipsis;
+}
+
+.badge {
+  margin-left: 8px;
+  padding: 1px 8px;
+  color: var(--copper);
+  border: 1px solid var(--copper);
+  border-radius: 999px;
+  font-family: system-ui, "Segoe UI", sans-serif;
+  font-size: 12px;
+  letter-spacing: 0;
+  vertical-align: middle;
+}
+
+.warn {
+  margin-top: 16px;
+  padding: 12px 14px;
+  color: var(--text);
+  background: #3a2a22;
+  border: 1px solid var(--copper);
+  border-radius: 8px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.actions button,
+.actions .button {
+  margin-top: 16px;
+}
+
+.actions .button.quiet {
+  margin-left: 0;
+}
+
+button.text-action {
+  margin-top: 12px;
+  padding: 0;
+  color: var(--copper);
+  background: none;
+  border: 0;
+  text-decoration: underline;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 10px 16px;
+  color: var(--ink);
+  background: var(--copper);
+  border-radius: 8px;
+  z-index: 2;
+}
+
 button, .button {
   display: inline-block;
   margin-top: 16px;
@@ -156,6 +383,10 @@ button, .button {
   color: var(--text);
   background: transparent;
   border: 1px solid var(--line);
+}
+
+.button.back {
+  margin-left: 0;
 }
 
 .card a {
@@ -184,6 +415,12 @@ button:disabled {
 .secret {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+@media (max-width: 760px) {
+  .lockup-copy {
+    padding-right: 36px;
+  }
 }
 
 @media (max-width: 520px) {
