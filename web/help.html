@@ -1,0 +1,116 @@
+<!--
+  ChronoLock
+  Developed by Kevin Roper for NueM8.
+  Version 1.1.0
+  Free to use and test.
+  https://chronolock.nuem8.com/
+  Licensed under GPL-3.0-only. See LICENSE.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Help | NueM8 ChronoLock</title>
+  <meta name="description" content="How to send a secret with NueM8 ChronoLock, lock it to a key, and open it.">
+  <link rel="canonical" href="https://chronolock.nuem8.com/help">
+  <meta name="robots" content="index, follow">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <a class="help-mark" href="/help" aria-label="Help">?</a>
+  <div class="lockup">
+    <a href="/" aria-label="ChronoLock"><img src="/logo.png" alt="" width="112" height="112"></a>
+    <div class="lockup-copy">
+      <h1>NueM8 ChronoLock <span class="version">__VERSION__</span></h1>
+      <p class="tagline">Precision credential dispatch. Forged in local memory, dissolved by time.</p>
+    </div>
+  </div>
+  <main class="help">
+    <section>
+      <h2>How ChronoLock works</h2>
+      <p>ChronoLock encrypts your secret in this browser and gives you a link. The server stores only the locked secret until it is opened or it expires. ChronoLock cannot read the secret. There is no account and no telemetry.</p>
+      <ul>
+        <li><strong>Payload limit:</strong> up to 8KB per secret.</li>
+        <li><strong>Lifetimes:</strong> 5 minutes, 1 hour, 1 day, or 7 days.</li>
+        <li><strong>Secure page:</strong> open ChronoLock over HTTPS, or on localhost. The browser will not encrypt a secret on an insecure page.</li>
+      </ul>
+    </section>
+    <section>
+      <h2>Sending a secret</h2>
+      <ol>
+        <li>Enter the secret, choose its lifetime, and choose whether to <strong>Delete after one reveal</strong>.</li>
+        <li>Choose how to lock it, then select <strong>Create link</strong>.</li>
+        <li>Send the link to the recipient.</li>
+      </ol>
+      <div class="mode-card">
+        <h3>Key in the link</h3>
+        <p>Leave <strong>User key pair</strong> off. The decryption key is the part of the link after <code>#</code>.</p>
+        <ul>
+          <li>The browser does not send the part after <code>#</code> to ChronoLock.</li>
+          <li>Anyone with the complete link can open the secret. Copy and send the whole link.</li>
+        </ul>
+      </div>
+      <div class="mode-card">
+        <h3>Lock to a public key</h3>
+        <p>Turn <strong>User key pair</strong> on and paste the recipient's public key.</p>
+        <ul>
+          <li>The link contains no decryption key. Only the matching private key can open the secret. ChronoLock never receives the private key.</li>
+          <li>If this browser already holds a key, <strong>User key pair</strong> starts on and the box is filled with that public key. Replace it with the recipient's public key, or turn <strong>User key pair</strong> off to put the key in the link.</li>
+          <li><strong>View keys</strong> opens the key page, where you can reveal, download, copy, or delete the key in this browser.</li>
+        </ul>
+      </div>
+    </section>
+    <section>
+      <h2>Managing your keys</h2>
+      <p>Open <strong>Your key</strong> to create a key, look at it, or hold one you already have.</p>
+      <h3>Generate a new key pair</h3>
+      <ul>
+        <li><strong>Generate new key pair</strong> creates a public key you can share and a private key that stays with you.</li>
+        <li>Nothing is saved in this browser until you store the private key, check <strong>I have saved my private key</strong>, and select <strong>Confirm and continue</strong>. <strong>Back</strong> leaves without storing it.</li>
+      </ul>
+      <h3>Key actions</h3>
+      <ul>
+        <li><strong>Reveal private key:</strong> shows the private key on the page.</li>
+        <li><strong>Download private key:</strong> saves <code>chronolock-private-key.txt</code>.</li>
+        <li><strong>Delete local keys:</strong> asks a second time, then removes the key from this browser.</li>
+      </ul>
+      <h3>Import an existing key</h3>
+      <p>Select <strong>Import an existing key</strong> and paste a private key. ChronoLock derives the matching public key. The two values have to be different.</p>
+      <div class="warn" role="note"><strong>If you lose the private key,</strong> a secret locked to its public key cannot be opened. ChronoLock cannot recover it.</div>
+    </section>
+    <section>
+      <h2>Opening a secret</h2>
+      <p>Open the link and select <strong>Reveal secret</strong>. Decryption happens in this browser.</p>
+      <ul>
+        <li><strong>Key in the link:</strong> the part after <code>#</code> has to still be there. A link copied without it cannot be opened.</li>
+        <li><strong>Locked to a key:</strong> if this browser holds the matching private key, <strong>Reveal secret</strong> uses it. You do not have to open <strong>User key pair</strong>.</li>
+      </ul>
+      <h3>Use a different private key</h3>
+      <p>Open <strong>User key pair</strong> on the reveal page:</p>
+      <ul>
+        <li><strong>Load key</strong> fills the box with the key saved in this browser.</li>
+        <li><strong>Load key file</strong> reads an unencrypted PEM private key (<code>BEGIN PRIVATE KEY</code> or <code>BEGIN EC PRIVATE KEY</code>) or a ChronoLock private-key file. A public-key file is refused. A PEM that still has a passphrase is refused. The file is used for this open and is not saved in the browser.</li>
+        <li><strong>Clear</strong> removes the key from the box.</li>
+      </ul>
+      <h3>A wrong key, and expiry</h3>
+      <ul>
+        <li>A wrong private key does not open the secret and does not delete it.</li>
+        <li>With <strong>Delete after one reveal</strong> on, the secret is deleted only after the right key opens it. It also dies when its lifetime ends.</li>
+      </ul>
+    </section>
+  </main>
+  <footer class="legal">
+    <nav aria-label="NueM8">
+      <a href="/">ChronoLock</a>
+      <a href="/key">Your key</a>
+      <a href="/help">Help</a>
+      <a href="https://nuem8.com/philosophy" target="_blank" rel="noreferrer noopener">Design philosophy</a>
+      <a href="https://nuem8.com/privacy" target="_blank" rel="noreferrer noopener">Privacy Policy</a>
+      <a href="https://nuem8.com/disclaimer" target="_blank" rel="noreferrer noopener">Disclaimer</a>
+      <a href="/revisions">Revision log</a>
+    </nav>
+  </footer>
+</body>
+</html>

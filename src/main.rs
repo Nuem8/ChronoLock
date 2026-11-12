@@ -1,5 +1,6 @@
 //! ChronoLock
 //! Developed by Kevin Roper for NueM8.
+//! Version 1.1.0
 //! Free to use and test.
 //! https://chronolock.nuem8.com/
 //! Licensed under GPL-3.0-only. See LICENSE.
@@ -22,6 +23,9 @@ use std::time::{Duration, Instant};
 use store::{now_unix, Record, Store, TakeError};
 
 const INDEX_HTML: &str = include_str!("../web/index.html");
+const REVISIONS_HTML: &str = include_str!("../web/revisions.html");
+const HELP_HTML: &str = include_str!("../web/help.html");
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 const ROBOTS_TXT: &str = "\
 User-agent: *\n\
 Allow: /\n\
@@ -32,6 +36,9 @@ const SITEMAP_XML: &str = "\
 <?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
 <urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n\
   <url><loc>https://chronolock.nuem8.com/</loc></url>\n\
+  <url><loc>https://chronolock.nuem8.com/key</loc></url>\n\
+  <url><loc>https://chronolock.nuem8.com/revisions</loc></url>\n\
+  <url><loc>https://chronolock.nuem8.com/help</loc></url>\n\
 </urlset>\n";
 const APP_CSS: &str = include_str!("../web/app.css");
 const APP_JS: &str = include_str!("../web/app.js");
@@ -39,7 +46,8 @@ const LOGO: &[u8] = include_bytes!("../web/logo.png");
 
 const MAX_PLAIN_BYTES: usize = 8 * 1024;
 const GCM_OVERHEAD: usize = 12 + 16;
-const MAX_CIPHER_BYTES: usize = MAX_PLAIN_BYTES + GCM_OVERHEAD;
+const RECIPIENT_PUBLIC_BYTES: usize = 65;
+const MAX_CIPHER_BYTES: usize = MAX_PLAIN_BYTES + GCM_OVERHEAD + RECIPIENT_PUBLIC_BYTES;
 const MIN_CIPHER_BYTES: usize = GCM_OVERHEAD;
 const MIN_TTL: u64 = 60;
 const DEFAULT_MAX_TTL: u64 = 7 * 24 * 60 * 60;
@@ -80,6 +88,7 @@ struct CreateBody {
     ciphertext: String,
     ttl_seconds: u64,
     burn: Option<bool>,
+    locked: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -93,6 +102,7 @@ struct RevealResponse {
     ciphertext: String,
     burn: bool,
     expires_at: i64,
+    locked: bool,
 }
 
 #[derive(Serialize)]
@@ -176,6 +186,9 @@ async fn main() {
 fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(index))
+        .route("/key", get(index))
+        .route("/revisions", get(revisions))
+        .route("/help", get(help_page))
         .route("/robots.txt", get(robots))
         .route("/sitemap.xml", get(sitemap))
         .route("/app.css", get(css))
@@ -184,6 +197,7 @@ fn router(state: AppState) -> Router {
         .route("/s/:id", get(secret_page))
         .route("/api/secrets", post(create))
         .route("/api/secrets/:id/reveal", post(reveal))
+        .route("/api/secrets/:id/finish", post(finish))
         .layer(DefaultBodyLimit::max(16 * 1024))
         .with_state(state)
 }
@@ -259,12 +273,49 @@ fn help() -> String {
         .to_string()
 }
 
-async fn index() -> Response {
-    page(header::CONTENT_TYPE, "text/html; charset=utf-8", INDEX_HTML)
+fn with_version(html: &str) -> String {
+    html.replace("__VERSION__", VERSION)
 }
 
-async fn secret_page(Path(_id): Path<String>) -> Response {
-    let html = INDEX_HTML.replace(
+fn with_lock(html: String, mode: &str) -> String {
+    html.replace("__LOCK__", mode)
+}
+
+async fn index() -> Response {
+    page(
+        header::CONTENT_TYPE,
+        "text/html; charset=utf-8",
+        with_lock(with_version(INDEX_HTML), ""),
+    )
+}
+
+async fn revisions() -> Response {
+    page(
+        header::CONTENT_TYPE,
+        "text/html; charset=utf-8",
+        with_version(REVISIONS_HTML),
+    )
+}
+
+async fn help_page() -> Response {
+    page(
+        header::CONTENT_TYPE,
+        "text/html; charset=utf-8",
+        with_version(HELP_HTML),
+    )
+}
+
+async fn secret_page(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+    let mode = if !valid_id(&id) {
+        "gone"
+    } else {
+        match state.store.get(&id) {
+            Ok(record) if record.locked => "recipient",
+            Ok(_) => "",
+            Err(_) => "gone",
+        }
+    };
+    let html = with_lock(with_version(INDEX_HTML), mode).replace(
         r#"<meta name="robots" content="index, follow">"#,
         r#"<meta name="robots" content="noindex">"#,
     );
@@ -367,6 +418,10 @@ async fn create(
             return error(StatusCode::BAD_REQUEST, "The encrypted secret is not valid.");
         }
     };
+    let locked = body.locked.unwrap_or(false);
+    if locked && ciphertext.len() < RECIPIENT_PUBLIC_BYTES + GCM_OVERHEAD {
+        return error(StatusCode::BAD_REQUEST, "The encrypted secret is not valid.");
+    }
 
     let id = new_id();
     let expires_at = now_unix().saturating_add(body.ttl_seconds as i64);
@@ -374,6 +429,7 @@ async fn create(
         ciphertext,
         expires_at,
         burn: body.burn.unwrap_or(true),
+        locked,
     };
     if state.store.put(&id, record).is_err() {
         return error(StatusCode::INTERNAL_SERVER_ERROR, "The secret was not saved.");
@@ -404,23 +460,62 @@ async fn reveal(
         return error(StatusCode::TOO_MANY_REQUESTS, "Wait a minute, then try again.");
     }
 
-    match state.store.take(&id) {
-        Ok(record) => {
-            state.store.record_use(store::Use::Revealed);
-            (
-                StatusCode::OK,
-                Json(RevealResponse {
-                    ciphertext: URL_SAFE_NO_PAD.encode(record.ciphertext),
-                    burn: record.burn,
-                    expires_at: record.expires_at,
-                }),
-            )
-                .into_response()
-        }
-        Err(TakeError::Gone) => error(StatusCode::NOT_FOUND, "This secret is gone."),
+    let record = match state.store.get(&id) {
+        Ok(record) if record.locked => record,
+        Ok(_) => match state.store.take(&id) {
+            Ok(record) => record,
+            Err(TakeError::Gone) => return error(StatusCode::NOT_FOUND, "This secret is gone."),
+            Err(TakeError::Store) => {
+                return error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "The secret could not be read.",
+                );
+            }
+        },
+        Err(TakeError::Gone) => return error(StatusCode::NOT_FOUND, "This secret is gone."),
         Err(TakeError::Store) => {
-            error(StatusCode::INTERNAL_SERVER_ERROR, "The secret could not be read.")
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "The secret could not be read.",
+            );
         }
+    };
+    state.store.record_use(store::Use::Revealed);
+    (
+        StatusCode::OK,
+        Json(RevealResponse {
+            ciphertext: URL_SAFE_NO_PAD.encode(record.ciphertext),
+            burn: record.burn,
+            expires_at: record.expires_at,
+            locked: record.locked,
+        }),
+    )
+        .into_response()
+}
+
+async fn finish(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if !valid_id(&id) {
+        return error(StatusCode::NOT_FOUND, "This secret is gone.");
+    }
+    let ip = client_ip(peer, &headers, state.trust_proxy);
+    if !state
+        .limiter
+        .allow(&format!("finish:{ip}"), 60, Duration::from_secs(60))
+    {
+        return error(StatusCode::TOO_MANY_REQUESTS, "Wait a minute, then try again.");
+    }
+    match state.store.finish(&id) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(TakeError::Gone) => error(StatusCode::NOT_FOUND, "This secret is gone."),
+        Err(TakeError::Store) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "The secret could not be deleted.",
+        ),
     }
 }
 
@@ -562,6 +657,95 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_recipient_key_secret_stays_until_it_is_opened() {
+        let app = router(test_state());
+        let cipher = URL_SAFE_NO_PAD.encode(vec![9u8; RECIPIENT_PUBLIC_BYTES + GCM_OVERHEAD]);
+        let (status, body) = send(
+            app.clone(),
+            Request::builder()
+                .method("POST")
+                .uri("/api/secrets")
+                .header("content-type", "application/json")
+                .body(Body::from(format!(
+                    "{{\"ciphertext\":\"{cipher}\",\"ttl_seconds\":3600,\"burn\":true,\"locked\":true}}"
+                )))
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let created: CreateResponse = serde_json::from_str(&body).unwrap();
+
+        let (status, page) = send(
+            app.clone(),
+            Request::builder()
+                .uri(format!("/s/{}", created.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(page.contains("content=\"recipient\""));
+        assert!(!page.contains(&cipher));
+
+        let (status, revealed) = send(
+            app.clone(),
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/secrets/{}/reveal", created.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(revealed.contains("\"locked\":true"));
+        assert!(revealed.contains("\"burn\":true"));
+
+        let (status, _) = send(
+            app.clone(),
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/secrets/{}/reveal", created.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let (status, _) = send(
+            app.clone(),
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/secrets/{}/finish", created.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+
+        let (status, page) = send(
+            app.clone(),
+            Request::builder()
+                .uri(format!("/s/{}", created.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(page.contains("content=\"gone\""));
+
+        let (status, _) = send(
+            app,
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/secrets/{}/reveal", created.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
     async fn opening_the_page_does_not_burn_the_secret() {
         let app = router(test_state());
         let (status, body) = send(
@@ -651,6 +835,42 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert!(home.contains("index, follow"));
         assert!(home.contains("https://chronolock.nuem8.com/"));
+        assert!(home.contains(&format!("<span class=\"version\">{VERSION}</span>")));
+        assert!(home.contains("href=\"/revisions\""));
+        assert!(home.contains("href=\"/help\""));
+        assert!(home.contains("class=\"help-mark\""));
+        assert!(!home.contains("__VERSION__"));
+        assert!(!home.contains("__LOCK__"));
+
+        let (status, log) = send(
+            app.clone(),
+            Request::builder()
+                .uri("/revisions")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(log.contains("Revision log"));
+        assert!(log.contains(&format!("<span class=\"version\">{VERSION}</span>")));
+        assert!(log.contains("<h3>1.1.0"));
+        assert!(log.contains("locks new secrets by default"));
+        assert!(!log.contains("1.2.0"));
+        assert!(log.contains("<h3>1.0.2"));
+        assert!(log.contains("<h3>1.0.0"));
+        assert!(!log.contains("__VERSION__"));
+
+        let (status, help) = send(
+            app.clone(),
+            Request::builder().uri("/help").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(help.contains("<h2>How ChronoLock works</h2>"));
+        assert!(help.contains("User key pair"));
+        assert!(help.contains("Load key file"));
+        assert!(help.contains(&format!("<span class=\"version\">{VERSION}</span>")));
+        assert!(!help.contains("__VERSION__"));
 
         let response = app
             .clone()
@@ -698,6 +918,9 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert!(sitemap.contains("https://chronolock.nuem8.com/</loc>"));
+        assert!(sitemap.contains("https://chronolock.nuem8.com/key</loc>"));
+        assert!(sitemap.contains("https://chronolock.nuem8.com/revisions</loc>"));
+        assert!(sitemap.contains("https://chronolock.nuem8.com/help</loc>"));
         assert!(!sitemap.contains("/s/"));
     }
 }
