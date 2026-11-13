@@ -1,7 +1,7 @@
 <!--
   ChronoLock
   Developed by Kevin Roper for NueM8.
-  Version 1.1.0
+  Version 1.2.0
   Free to use and test.
   https://chronolock.nuem8.com/
   Licensed under GPL-3.0-only. See LICENSE.
@@ -32,7 +32,7 @@
       <h2>How ChronoLock works</h2>
       <p>ChronoLock encrypts your secret in this browser and gives you a link. The server stores only the locked secret until it is opened or it expires. ChronoLock cannot read the secret. There is no account and no telemetry.</p>
       <ul>
-        <li><strong>Payload limit:</strong> up to 8KB per secret.</li>
+        <li><strong>Payload limit:</strong> up to 32KB per secret.</li>
         <li><strong>Lifetimes:</strong> 5 minutes, 1 hour, 1 day, or 7 days.</li>
         <li><strong>Secure page:</strong> open ChronoLock over HTTPS, or on localhost. The browser will not encrypt a secret on an insecure page.</li>
       </ul>
@@ -40,10 +40,11 @@
     <section>
       <h2>Sending a secret</h2>
       <ol>
-        <li>Enter the secret, choose its lifetime, and choose whether to <strong>Delete after one reveal</strong>.</li>
+        <li>Enter the secret or config, or select <strong>Load file</strong>. Choose its lifetime, and choose whether to <strong>Delete after one reveal</strong>.</li>
         <li>Choose how to lock it, then select <strong>Create link</strong>.</li>
         <li>Send the link to the recipient.</li>
       </ol>
+      <p>Suitable for passwords, API keys, recovery codes, and small .env or configuration blocks.</p>
       <div class="mode-card">
         <h3>Key in the link</h3>
         <p>Leave <strong>User key pair</strong> off. The decryption key is the part of the link after <code>#</code>.</p>
@@ -82,7 +83,7 @@
     </section>
     <section>
       <h2>Opening a secret</h2>
-      <p>Open the link and select <strong>Reveal secret</strong>. Decryption happens in this browser.</p>
+      <p>Open the link and select <strong>Reveal secret</strong>. Decryption happens in this browser. <strong>Save file</strong> downloads the opened text to this computer. When the secret was loaded from a file, the download uses that file name. ChronoLock does not receive the file or its name.</p>
       <ul>
         <li><strong>Key in the link:</strong> the part after <code>#</code> has to still be there. A link copied without it cannot be opened.</li>
         <li><strong>Locked to a key:</strong> if this browser holds the matching private key, <strong>Reveal secret</strong> uses it. You do not have to open <strong>User key pair</strong>.</li>

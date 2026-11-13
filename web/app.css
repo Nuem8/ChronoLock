@@ -1,7 +1,7 @@
 /*
   ChronoLock
   Developed by Kevin Roper for NueM8.
-  Version 1.1.0
+  Version 1.2.0
   Free to use and test.
   https://chronolock.nuem8.com/
   Licensed under GPL-3.0-only. See LICENSE.
@@ -249,6 +249,26 @@ textarea, input[type="text"], input[type="password"], select {
 textarea {
   min-height: 160px;
   resize: vertical;
+}
+
+#secret,
+#plain {
+  min-height: 280px;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.field-row .button {
+  margin: 16px 0 6px;
+}
+
+.field-row .button.quiet {
+  margin-left: 0;
 }
 
 .choice {

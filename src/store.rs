@@ -1,6 +1,6 @@
 //! ChronoLock storage.
 //! Developed by Kevin Roper for NueM8.
-//! Version 1.1.0
+//! Version 1.2.0
 //! Free to use and test.
 //! https://chronolock.nuem8.com/
 //! Licensed under GPL-3.0-only. See LICENSE.
