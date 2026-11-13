@@ -1,7 +1,7 @@
 <!--
   ChronoLock
   Developed by Kevin Roper for NueM8.
-  Version 1.1.0
+  Version 1.2.0
   Free to use and test.
   https://chronolock.nuem8.com/
   Licensed under GPL-3.0-only. See LICENSE.
@@ -29,6 +29,10 @@
   </div>
   <main class="revisions">
     <h2>Revision log</h2>
+    <article>
+      <h3>1.2.0 <time datetime="2026-11-13">November 13, 2026</time></h3>
+      <p>A secret can be 32KB. That is room for a password, an API key, a recovery code, or a small .env file. The box is tall enough for a configuration. Load file reads a local text file, and Save file writes the opened text back under the loaded file name. That name is encrypted with the secret. ChronoLock never receives it. The original guarantees stand. Encryption stays in the browser. There is no account and no telemetry. A secret still burns after one reveal, when that was chosen, or when its lifetime ends.</p>
+    </article>
     <article>
       <h3>1.1.0 <time datetime="2026-11-12">November 12, 2026</time></h3>
       <p>A secret can be locked to a public key the recipient already holds. The private key stays in their browser, apart from the public key, and ChronoLock never receives it. A key saved in this browser locks new secrets by default, and you confirm the private key is saved before this browser stores it. A secret can be opened with that key or an unencrypted private-key file. Help opens from the ? in the upper right.</p>

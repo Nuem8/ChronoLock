@@ -1,6 +1,6 @@
 //! ChronoLock
 //! Developed by Kevin Roper for NueM8.
-//! Version 1.1.0
+//! Version 1.2.0
 //! Free to use and test.
 //! https://chronolock.nuem8.com/
 //! Licensed under GPL-3.0-only. See LICENSE.
@@ -44,10 +44,12 @@ const APP_CSS: &str = include_str!("../web/app.css");
 const APP_JS: &str = include_str!("../web/app.js");
 const LOGO: &[u8] = include_bytes!("../web/logo.png");
 
-const MAX_PLAIN_BYTES: usize = 8 * 1024;
+const MAX_PLAIN_BYTES: usize = 32 * 1024;
 const GCM_OVERHEAD: usize = 12 + 16;
 const RECIPIENT_PUBLIC_BYTES: usize = 65;
 const MAX_CIPHER_BYTES: usize = MAX_PLAIN_BYTES + GCM_OVERHEAD + RECIPIENT_PUBLIC_BYTES;
+// One maximum ciphertext, written as base64url, plus the JSON around it.
+const MAX_BODY_BYTES: usize = (MAX_CIPHER_BYTES * 4 + 2) / 3 + 256;
 const MIN_CIPHER_BYTES: usize = GCM_OVERHEAD;
 const MIN_TTL: u64 = 60;
 const DEFAULT_MAX_TTL: u64 = 7 * 24 * 60 * 60;
@@ -198,7 +200,7 @@ fn router(state: AppState) -> Router {
         .route("/api/secrets", post(create))
         .route("/api/secrets/:id/reveal", post(reveal))
         .route("/api/secrets/:id/finish", post(finish))
-        .layer(DefaultBodyLimit::max(16 * 1024))
+        .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(state)
 }
 
@@ -412,7 +414,7 @@ async fn create(
     let ciphertext = match decode_cipher(&body.ciphertext) {
         Ok(ciphertext) => ciphertext,
         Err(CipherError::TooLarge) => {
-            return error(StatusCode::BAD_REQUEST, "That secret is larger than 8KB.");
+            return error(StatusCode::BAD_REQUEST, "That secret is larger than 32KB.");
         }
         Err(CipherError::Invalid) => {
             return error(StatusCode::BAD_REQUEST, "The encrypted secret is not valid.");
@@ -805,7 +807,7 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert!(body.contains("8KB"));
+        assert!(body.contains("32KB"));
 
         let at_limit = URL_SAFE_NO_PAD.encode(vec![7u8; MAX_CIPHER_BYTES]);
         let (status, _) = send(
@@ -853,9 +855,10 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert!(log.contains("Revision log"));
         assert!(log.contains(&format!("<span class=\"version\">{VERSION}</span>")));
+        assert!(log.contains("<h3>1.2.0"));
+        assert!(log.contains("A secret can be 32KB."));
         assert!(log.contains("<h3>1.1.0"));
         assert!(log.contains("locks new secrets by default"));
-        assert!(!log.contains("1.2.0"));
         assert!(log.contains("<h3>1.0.2"));
         assert!(log.contains("<h3>1.0.0"));
         assert!(!log.contains("__VERSION__"));

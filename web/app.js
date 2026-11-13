@@ -1,11 +1,13 @@
 // ChronoLock
 // Developed by Kevin Roper for NueM8.
-// Version 1.1.0
+// Version 1.2.0
 // Free to use and test.
 // https://chronolock.nuem8.com/
 // Licensed under GPL-3.0-only. See LICENSE.
 
-const MAX_BYTES = 8192
+const MAX_BYTES = 32768
+const MAX_LABEL = "32KB"
+const NAME_MARK = "\u0000chronolock-name\u0000"
 const PUBLIC_KEY_BYTES = 65
 const KEY_STORE = "chronolock.key"
 const KEY_INFO = new TextEncoder().encode("chronolock-recipient")
@@ -34,9 +36,13 @@ function renderCreate() {
   const identity = readIdentity()
   root.innerHTML = `
     <form class="card" id="create">
-      <label for="secret">Secret</label>
+      <div class="field-row">
+        <label for="secret">Secret or config</label>
+        <button type="button" class="button quiet" id="load-secret">Load file</button>
+        <input id="secret-file" type="file" accept=".env,.txt,text/plain" hidden>
+      </div>
       <textarea id="secret" name="secret" autocomplete="off" spellcheck="false" required></textarea>
-      <p class="limit" id="limit" aria-live="polite">0 bytes of 8KB.</p>
+      <p class="limit" id="limit" aria-live="polite">0 bytes of 32KB.</p>
       <label for="ttl">Lifetime</label>
       <select id="ttl" name="ttl">
         <option value="300">5 minutes</option>
@@ -81,6 +87,24 @@ function renderCreate() {
   }
   if (identity) recipient.value = identity.publicKey
   secret.addEventListener("input", refreshLimit)
+  const secretFile = document.querySelector("#secret-file")
+  document.querySelector("#load-secret").addEventListener("click", () => secretFile.click())
+  secretFile.addEventListener("change", () => {
+    const file = secretFile.files && secretFile.files[0]
+    secretFile.value = ""
+    if (!file) return
+    const reader = new FileReader()
+    reader.addEventListener("load", () => {
+      secret.dataset.fileName = safeFileName(file.name)
+      secret.value = typeof reader.result === "string" ? reader.result : ""
+      document.querySelector("#status").textContent = ""
+      refreshLimit()
+    })
+    reader.addEventListener("error", () => {
+      document.querySelector("#status").textContent = "That file could not be read."
+    })
+    reader.readAsText(file)
+  })
   useKey.addEventListener("change", syncKeyLink)
   recipient.addEventListener("input", syncKeyLink)
   document.querySelector("#create").addEventListener("submit", onCreate)
@@ -91,10 +115,12 @@ function renderCreate() {
 async function onCreate(event) {
   event.preventDefault()
   const status = document.querySelector("#status")
-  const secret = document.querySelector("#secret").value
-  const bytes = new TextEncoder().encode(secret).length
+  const field = document.querySelector("#secret")
+  const secret = field.value
+  const named = packPlain(secret, field.dataset.fileName || "")
+  const bytes = new TextEncoder().encode(named).length
   if (!secret.trim()) {
-    status.textContent = "Write a secret first."
+    status.textContent = "Write a secret or config first."
     return
   }
   if (bytes > MAX_BYTES) {
@@ -110,7 +136,7 @@ async function onCreate(event) {
   status.textContent = "Encrypting…"
   let packed
   try {
-    packed = recipient ? await encryptToRecipient(secret, recipient) : await encrypt(secret)
+    packed = recipient ? await encryptToRecipient(named, recipient) : await encrypt(named)
   } catch {
     status.textContent = "That public key is not valid."
     return
@@ -131,7 +157,7 @@ async function onCreate(event) {
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
     status.textContent = payload.error || (response.status === 413
-      ? "That secret is larger than 8KB."
+      ? "That secret is larger than " + MAX_LABEL + "."
       : "The link was not created.")
     return
   }
@@ -208,7 +234,10 @@ function renderReveal(id) {
       <button type="button" id="reveal">Reveal secret</button>
       <p class="status" id="status" role="status"></p>
       <div id="opened" hidden>
-        <label for="plain">Secret</label>
+        <div class="field-row">
+          <label for="plain">Secret or config</label>
+          <button type="button" class="button quiet" id="save-secret">Save file</button>
+        </div>
         <textarea id="plain" class="secret" readonly></textarea>
         <button type="button" id="copy">Copy secret</button>
         <p class="note" id="after"></p>
@@ -222,6 +251,10 @@ function renderReveal(id) {
   }
   const open = () => openSecret(id, locked ? null : key)
   document.querySelector("#reveal").addEventListener("click", open)
+  document.querySelector("#save-secret").addEventListener("click", () => {
+    const field = document.querySelector("#plain")
+    saveSecret(field.value, field.dataset.fileName || "")
+  })
   const privateKey = document.querySelector("#private-key")
   if (privateKey) {
     const useKey = document.querySelector("#use-key")
@@ -331,9 +364,12 @@ async function openSecret(id, key) {
       })
       deleted = done.ok
     }
+    const opened = unpackPlain(plain)
     document.querySelector("#opened").hidden = false
-    document.querySelector("#plain").value = plain
-    document.querySelector("#copy").addEventListener("click", () => copyValue(plain, "Secret copied."))
+    const plainField = document.querySelector("#plain")
+    plainField.value = opened.text
+    plainField.dataset.fileName = opened.name
+    document.querySelector("#copy").addEventListener("click", () => copyValue(opened.text, "Secret copied."))
     document.querySelector("#lead").textContent = "Opened in this browser."
     document.querySelector("#after").textContent = payload.burn
       ? (deleted
@@ -616,6 +652,45 @@ async function generateIdentity() {
   return identity
 }
 
+function saveSecret(text, name) {
+  const file = new Blob([text], { type: "text/plain" })
+  const url = URL.createObjectURL(file)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = name || "chronolock-secret.txt"
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function safeFileName(name) {
+  const base = String(name || "").split(/[/\\]/).pop()
+  const cleaned = base.replace(/[\u0000-\u001f\u007f<>:"|?*]/g, "").replace(/[. ]+$/g, "").trim()
+  if (!cleaned || cleaned === "." || cleaned === "..") return ""
+  return cleaned.slice(0, 200)
+}
+
+function packPlain(text, name) {
+  const safe = safeFileName(name)
+  if (!safe) return text
+  return NAME_MARK + String(safe.length) + "\n" + safe + "\n" + text
+}
+
+function unpackPlain(text) {
+  if (!text.startsWith(NAME_MARK)) return { text, name: "" }
+  const rest = text.slice(NAME_MARK.length)
+  const breakAt = rest.indexOf("\n")
+  const length = Number(rest.slice(0, breakAt))
+  const nameStart = breakAt + 1
+  if (!Number.isInteger(length) || length < 1 || length > 200 || breakAt < 1) return { text, name: "" }
+  const name = rest.slice(nameStart, nameStart + length)
+  if (name.length !== length || rest.charAt(nameStart + length) !== "\n" || safeFileName(name) !== name) {
+    return { text, name: "" }
+  }
+  return { text: rest.slice(nameStart + length + 1), name }
+}
+
 function downloadPrivateKey(privateKey) {
   const file = new Blob([privateKey + "\n"], { type: "text/plain" })
   const url = URL.createObjectURL(file)
@@ -819,16 +894,17 @@ function refreshLimit() {
   const field = document.querySelector("#secret")
   const note = document.querySelector("#limit")
   const button = document.querySelector("#create button")
-  const bytes = new TextEncoder().encode(field.value).length
+  if (!field.value) delete field.dataset.fileName
+  const bytes = new TextEncoder().encode(packPlain(field.value, field.dataset.fileName || "")).length
   const over = bytes > MAX_BYTES
-  note.textContent = over ? limitMessage(bytes) : formatSize(bytes) + " of 8KB."
+  note.textContent = over ? limitMessage(bytes) : formatSize(bytes) + " of " + MAX_LABEL + "."
   note.classList.toggle("over", over)
   field.setAttribute("aria-invalid", over ? "true" : "false")
   button.disabled = over
 }
 
 function limitMessage(bytes) {
-  return "That secret is " + bytes + " bytes. The limit is 8KB."
+  return "That secret is " + bytes + " bytes. The limit is " + MAX_LABEL + "."
 }
 
 function formatSize(bytes) {
