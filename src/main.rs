@@ -1,14 +1,16 @@
 //! ChronoLock
 //! Developed by Kevin Roper for NueM8.
-//! Version 1.2.0
+//! Version 1.2.1
 //! Free to use and test.
 //! https://chronolock.nuem8.com/
 //! Licensed under GPL-3.0-only. See LICENSE.
 
 mod store;
 
+use axum::extract::rejection::JsonRejection;
 use axum::extract::{ConnectInfo, DefaultBodyLimit, Path, State};
-use axum::http::{header, HeaderValue, StatusCode};
+use axum::http::{header, HeaderValue, Request, StatusCode};
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -16,10 +18,9 @@ use base64::engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD};
 use base64::Engine;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::time::Duration;
 use store::{now_unix, Record, Store, TakeError};
 
 const INDEX_HTML: &str = include_str!("../web/index.html");
@@ -57,32 +58,8 @@ const DEFAULT_MAX_TTL: u64 = 7 * 24 * 60 * 60;
 #[derive(Clone)]
 struct AppState {
     store: Arc<Store>,
-    limiter: Arc<Limiter>,
     max_ttl: u64,
     trust_proxy: bool,
-}
-
-struct Limiter {
-    hits: Mutex<HashMap<String, Vec<Instant>>>,
-}
-
-impl Limiter {
-    fn allow(&self, key: &str, limit: usize, window: Duration) -> bool {
-        let Ok(mut hits) = self.hits.lock() else {
-            return false;
-        };
-        let now = Instant::now();
-        if hits.len() > 10_000 {
-            hits.retain(|_, times| times.iter().any(|at| now.duration_since(*at) < window));
-        }
-        let times = hits.entry(key.to_string()).or_default();
-        times.retain(|at| now.duration_since(*at) < window);
-        if times.len() >= limit {
-            return false;
-        }
-        times.push(now);
-        true
-    }
 }
 
 #[derive(Deserialize)]
@@ -144,9 +121,6 @@ async fn main() {
 
     let state = AppState {
         store: Arc::new(store),
-        limiter: Arc::new(Limiter {
-            hits: Mutex::new(HashMap::new()),
-        }),
         max_ttl: args.max_ttl,
         trust_proxy: args.trust_proxy,
     };
@@ -201,7 +175,17 @@ fn router(state: AppState) -> Router {
         .route("/api/secrets/:id/reveal", post(reveal))
         .route("/api/secrets/:id/finish", post(finish))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
+        .layer(middleware::from_fn(strict_transport))
         .with_state(state)
+}
+
+async fn strict_transport(request: Request<axum::body::Body>, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    response.headers_mut().insert(
+        header::STRICT_TRANSPORT_SECURITY,
+        HeaderValue::from_static("max-age=15552000"),
+    );
+    response
 }
 
 struct Args {
@@ -271,7 +255,7 @@ fn help() -> String {
      --store sqlite|memory     sqlite keeps secrets until they die; memory dies with the process\n\
      --data chronolock.db      SQLite file\n\
      --max-ttl 604800          Longest lifetime, in seconds\n\
-     --trust-proxy             Read X-Forwarded-For when the peer is loopback\n"
+     --trust-proxy             Use the last X-Forwarded-For value when the peer is loopback\n"
         .to_string()
 }
 
@@ -394,13 +378,16 @@ async fn create(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: axum::http::HeaderMap,
-    Json(body): Json<CreateBody>,
+    body: Result<Json<CreateBody>, JsonRejection>,
 ) -> Response {
+    let Json(body) = match body {
+        Ok(body) => body,
+        Err(_) => {
+            return error(StatusCode::BAD_REQUEST, "The encrypted secret is not valid.");
+        }
+    };
     let ip = client_ip(peer, &headers, state.trust_proxy);
-    if !state
-        .limiter
-        .allow(&format!("create:{ip}"), 30, Duration::from_secs(60))
-    {
+    if !state.store.allow("create", &ip, 30, 60) {
         return error(StatusCode::TOO_MANY_REQUESTS, "Wait a minute, then try again.");
     }
 
@@ -455,10 +442,7 @@ async fn reveal(
         return error(StatusCode::NOT_FOUND, "This secret is gone.");
     }
     let ip = client_ip(peer, &headers, state.trust_proxy);
-    if !state
-        .limiter
-        .allow(&format!("reveal:{ip}"), 60, Duration::from_secs(60))
-    {
+    if !state.store.allow("reveal", &ip, 60, 60) {
         return error(StatusCode::TOO_MANY_REQUESTS, "Wait a minute, then try again.");
     }
 
@@ -505,10 +489,7 @@ async fn finish(
         return error(StatusCode::NOT_FOUND, "This secret is gone.");
     }
     let ip = client_ip(peer, &headers, state.trust_proxy);
-    if !state
-        .limiter
-        .allow(&format!("finish:{ip}"), 60, Duration::from_secs(60))
-    {
+    if !state.store.allow("finish", &ip, 60, 60) {
         return error(StatusCode::TOO_MANY_REQUESTS, "Wait a minute, then try again.");
     }
     match state.store.finish(&id) {
@@ -560,12 +541,17 @@ fn new_id() -> String {
 fn client_ip(peer: SocketAddr, headers: &axum::http::HeaderMap, trust_proxy: bool) -> String {
     if trust_proxy && peer.ip().is_loopback() {
         if let Some(value) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
-            if let Some(first) = value.split(',').next() {
-                let first = first.trim();
-                if !first.is_empty() && first.len() <= 64 {
-                    return first.to_string();
-                }
+        if let Some(last) = value
+            .split(',')
+            .map(str::trim)
+            .filter(|part| !part.is_empty())
+            .next_back()
+        {
+            let last = last.strip_prefix("::ffff:").unwrap_or(last);
+            if last.len() <= 64 {
+                return last.to_string();
             }
+        }
         }
     }
     peer.ip().to_string()
@@ -591,9 +577,6 @@ mod tests {
     fn test_state() -> AppState {
         AppState {
             store: Arc::new(Store::memory()),
-            limiter: Arc::new(Limiter {
-                hits: Mutex::new(HashMap::new()),
-            }),
             max_ttl: DEFAULT_MAX_TTL,
             trust_proxy: false,
         }
@@ -601,6 +584,20 @@ mod tests {
 
     fn cipher() -> String {
         URL_SAFE_NO_PAD.encode(vec![7u8; 40])
+    }
+
+    #[test]
+    fn the_proxy_address_is_the_last_forwarded_value() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            "1.1.1.1, 203.0.113.8".parse().unwrap(),
+        );
+        let loopback = SocketAddr::from(([127, 0, 0, 1], 9));
+        assert_eq!(client_ip(loopback, &headers, true), "203.0.113.8");
+        assert_eq!(client_ip(loopback, &headers, false), "127.0.0.1");
+        let peer = SocketAddr::from(([10, 0, 0, 8], 9));
+        assert_eq!(client_ip(peer, &headers, true), "10.0.0.8");
     }
 
     async fn send(app: Router, mut request: Request<Body>) -> (StatusCode, String) {
@@ -613,6 +610,23 @@ mod tests {
             .await
             .unwrap();
         (status, String::from_utf8(bytes.to_vec()).unwrap())
+    }
+
+    #[tokio::test]
+    async fn a_bad_create_body_does_not_describe_the_parser() {
+        let app = router(test_state());
+        let (status, body) = send(
+            app,
+            Request::builder()
+                .method("POST")
+                .uri("/api/secrets")
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body, "{\"error\":\"The encrypted secret is not valid.\"}");
     }
 
     #[tokio::test]
@@ -835,6 +849,18 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
+        let home_headers = app
+            .clone()
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            home_headers
+                .headers()
+                .get(header::STRICT_TRANSPORT_SECURITY)
+                .unwrap(),
+            "max-age=15552000"
+        );
         assert!(home.contains("index, follow"));
         assert!(home.contains("https://chronolock.nuem8.com/"));
         assert!(home.contains(&format!("<span class=\"version\">{VERSION}</span>")));
@@ -855,6 +881,8 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert!(log.contains("Revision log"));
         assert!(log.contains(&format!("<span class=\"version\">{VERSION}</span>")));
+        assert!(log.contains("<h3>1.2.1"));
+        assert!(log.contains("stay on HTTPS for 180 days"));
         assert!(log.contains("<h3>1.2.0"));
         assert!(log.contains("A secret can be 32KB."));
         assert!(log.contains("<h3>1.1.0"));

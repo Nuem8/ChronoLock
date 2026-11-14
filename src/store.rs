@@ -1,6 +1,6 @@
 //! ChronoLock storage.
 //! Developed by Kevin Roper for NueM8.
-//! Version 1.2.0
+//! Version 1.2.1
 //! Free to use and test.
 //! https://chronolock.nuem8.com/
 //! Licensed under GPL-3.0-only. See LICENSE.
@@ -43,6 +43,7 @@ struct DayCount {
 pub struct Store {
     backend: Backend,
     counts: Mutex<HashMap<String, DayCount>>,
+    limits: Mutex<HashMap<String, Vec<i64>>>,
 }
 
 impl Store {
@@ -50,6 +51,7 @@ impl Store {
         Self {
             backend: Backend::Memory(Mutex::new(HashMap::new())),
             counts: Mutex::new(HashMap::new()),
+            limits: Mutex::new(HashMap::new()),
         }
     }
 
@@ -72,14 +74,82 @@ impl Store {
                 day TEXT PRIMARY KEY,
                 creates INTEGER NOT NULL,
                 reveals INTEGER NOT NULL
-            );",
+            );
+            CREATE TABLE IF NOT EXISTS limits (
+                kind TEXT NOT NULL,
+                address TEXT NOT NULL,
+                at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS limits_lookup ON limits (kind, address, at);",
         )
         .map_err(|err| err.to_string())?;
         ensure_locked_column(&conn)?;
         Ok(Self {
             backend: Backend::Sqlite(Mutex::new(conn)),
             counts: Mutex::new(HashMap::new()),
+            limits: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// Count one try inside the window. SQLite keeps the count after a restart.
+    pub fn allow(&self, kind: &str, address: &str, limit: i64, window_secs: i64) -> bool {
+        let now = now_unix();
+        let cutoff = now.saturating_sub(window_secs);
+        match &self.backend {
+            Backend::Memory(_) => {
+                let Ok(mut limits) = self.limits.lock() else {
+                    return false;
+                };
+                if limits.len() > 10_000 {
+                    limits.retain(|_, times| times.iter().any(|at| *at > cutoff));
+                }
+                let times = limits
+                    .entry(format!("{kind}\n{address}"))
+                    .or_default();
+                times.retain(|at| *at > cutoff);
+                if times.len() as i64 >= limit {
+                    return false;
+                }
+                times.push(now);
+                true
+            }
+            Backend::Sqlite(conn) => {
+                let Ok(mut conn) = conn.lock() else {
+                    return false;
+                };
+                let Ok(tx) = conn.transaction() else {
+                    return false;
+                };
+                if tx
+                    .execute("DELETE FROM limits WHERE at <= ?1", params![cutoff])
+                    .is_err()
+                {
+                    return false;
+                }
+                let count: i64 = match tx.query_row(
+                    "SELECT COUNT(*) FROM limits WHERE kind = ?1 AND address = ?2 AND at > ?3",
+                    params![kind, address, cutoff],
+                    |row| row.get(0),
+                ) {
+                    Ok(count) => count,
+                    Err(_) => return false,
+                };
+                if count >= limit {
+                    let _ = tx.commit();
+                    return false;
+                }
+                if tx
+                    .execute(
+                        "INSERT INTO limits (kind, address, at) VALUES (?1, ?2, ?3)",
+                        params![kind, address, now],
+                    )
+                    .is_err()
+                {
+                    return false;
+                }
+                tx.commit().is_ok()
+            }
+        }
     }
 
     /// Add one to today's create or reveal total. The row is the day and the two numbers.
@@ -426,5 +496,27 @@ mod tests {
             .unwrap();
         assert_eq!((creates, reveals), (2, 1));
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn sqlite_limit_survives_reopen() {
+        let path = std::env::temp_dir().join(format!(
+            "chronolock-limit-{}-{}.db",
+            std::process::id(),
+            now_unix()
+        ));
+        let path = path.to_str().unwrap();
+        let store = Store::sqlite(path).unwrap();
+        assert!(store.allow("create", "203.0.113.8", 2, 60));
+        assert!(store.allow("create", "203.0.113.8", 2, 60));
+        assert!(!store.allow("create", "203.0.113.8", 2, 60));
+        drop(store);
+        let store = Store::sqlite(path).unwrap();
+        assert!(!store.allow("create", "203.0.113.8", 2, 60));
+        assert!(store.allow("reveal", "203.0.113.8", 2, 60));
+        drop(store);
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
     }
 }
